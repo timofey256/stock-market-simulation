@@ -10,6 +10,7 @@ Small naive agent-based stock market simulation implemented on Saturday for fun.
 
 ## Project structure
 `market_simulation.py` contains multistrat simulation described above.
+
 `only_ga.py` contains simulation with only genetic agents (it was my initial idea but turned out to be less interesting. still, i am including it)
 
 ## Screenshots
