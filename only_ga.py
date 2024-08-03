@@ -3,13 +3,26 @@ import numpy as np
 import matplotlib.pyplot as plt
 from time import sleep
 
+# Config
+population_size = 100
+price_genome_length = 10
+amount_genome_length = 10
+initial_money = 1000
+initial_stocks = 1
+initial_price = 50
+price_impact_factor = 0.01
+days = 252
+iterations = 50
+survival_rate = 0.3
+intermediate_beta = 0.5
+
+MAX_STOCKS_PER_TRADE = 100000000
 DO_LOG = False
+
 def log(message):
     if DO_LOG:
         print(message)
-        sleep(0.05)
-
-MAX_STOCKS_PER_TRADE = 100000000
+        sleep(0.02)
 
 class TradingAgent:
     def __init__(self, initial_money, initial_stocks, price_genome_length, amount_genome_length):
@@ -31,26 +44,39 @@ class TradingAgent:
             max_buyable = min(max_buyable, MAX_STOCKS_PER_TRADE)
             amount = int(max_buyable * amount_factor)
         elif price_decision < 0:  # Sell
-            amount = int(-self.stocks * amount_factor)
+            amount = int(self.stocks * amount_factor)
+            amount = -min(amount, MAX_STOCKS_PER_TRADE)
         else:
             amount = 0
         
         return amount
 
 class Market:
-    def __init__(self, initial_price, price_impact_factor):
+    def __init__(self, initial_price, price_impact_factor, growth_rate=0.0001):
         self.price = initial_price
         self.price_impact_factor = price_impact_factor
+        self.growth_rate = growth_rate  # Daily growth rate
         self.price_history = [initial_price]
         self.volume_history = [0]
 
     def update(self, net_demand):
         price_change = net_demand * self.price_impact_factor
         self.price *= (1 + price_change)
-        self.price = max(0.01, self.price)  # Ensure price doesn't go negative
+        
+        # Apply the growth rate
+        self.price *= (1 + self.growth_rate)
+        
+        self.price = max(1, self.price)  # Ensure price doesn't go negative
+        random_event_influence = max(0.7, random.normalvariate(1, 0.5))
+        random_event_influence = max(1.3, random_event_influence)
+        self.price *= random_event_influence
+
+        # Upper bound
+        self.price = min(self.price, initial_price*10_000)
+
         self.price_history.append(self.price)
         self.volume_history.append(abs(net_demand))
-
+        
 def run_simulation(agents, market, days, genome_length):
     for _ in range(days):
         net_demand = 0
@@ -78,10 +104,12 @@ def run_simulation(agents, market, days, genome_length):
     
     # Calculate final fitness (total assets)
     for agent in agents:
+        #agent.fitness = 0
         agent.fitness = agent.money + agent.stocks * market.price
+        #agent.fitness = agent.stocks * market.price
 
-def crossover(parent1, parent2):
-    child = TradingAgent(parent1.money, parent1.stocks, len(parent1.price_genome), len(parent1.amount_genome))
+def point_crossover(parent1, parent2):
+    child = TradingAgent(initial_money, initial_stocks, price_genome_length, amount_genome_length)
     
     # Crossover for price genome
     split = random.randint(0, len(parent1.price_genome))
@@ -93,7 +121,17 @@ def crossover(parent1, parent2):
     
     return child
 
-def mutate(agent, mutation_rate=0.01, mutation_amount=0.1):
+def intermediate_crossover(parent1, parent2):
+    child = TradingAgent(initial_money, initial_stocks, price_genome_length, amount_genome_length)
+    
+    child.price_genome   = np.array(parent1.price_genome) * intermediate_beta + np.array(parent2.price_genome) * (1-intermediate_beta)
+    child.amount_genome  = np.array(parent1.amount_genome) * intermediate_beta + np.array(parent2.amount_genome) * (1-intermediate_beta)
+
+    return child
+
+crossover = intermediate_crossover
+
+def mutate(agent, mutation_rate=0.1, mutation_amount=0.2):
     for genome in [agent.price_genome, agent.amount_genome]:
         for i in range(len(genome)):
             if random.random() < mutation_rate:
@@ -101,10 +139,10 @@ def mutate(agent, mutation_rate=0.01, mutation_amount=0.1):
                 genome[i] = max(-1, min(1, genome[i]))  # Clamp between -1 and 1
 
 def genetic_algorithm(population_size, price_genome_length, amount_genome_length, initial_money, initial_stocks, initial_price, price_impact_factor, days, iterations, survival_rate):
-    market = Market(initial_price, price_impact_factor)
     agents = [TradingAgent(initial_money, initial_stocks, price_genome_length, amount_genome_length) for _ in range(population_size)]
     
     for iteration in range(iterations):
+        market = Market(initial_price, price_impact_factor, growth_rate=0.001)
         run_simulation(agents, market, days, max(price_genome_length, amount_genome_length))
         agents.sort(key=lambda x: x.fitness, reverse=True)
         
@@ -122,18 +160,6 @@ def genetic_algorithm(population_size, price_genome_length, amount_genome_length
         print(f"Iteration {iteration + 1}: Best fitness = {agents[0].fitness:.2f}, Final price = {market.price:.2f}")
     
     return agents[0], market
-
-# Run the genetic algorithm
-population_size = 100
-price_genome_length = 10
-amount_genome_length = 5
-initial_money = 10000
-initial_stocks = 100
-initial_price = 100
-price_impact_factor = 0.01
-days = 252  # Approximately one trading year
-iterations = 50
-survival_rate = 0.2
 
 best_agent, market = genetic_algorithm(population_size, price_genome_length, amount_genome_length, initial_money, initial_stocks, initial_price, price_impact_factor, days, iterations, survival_rate)
 
